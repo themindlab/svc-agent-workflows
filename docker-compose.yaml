@@ -2,7 +2,6 @@ services:
   agent-server:
     image:
       ${AGENT_SERVER_IMAGE}
-    container_name: agent-server
     build:
       context: .
     command:
@@ -23,7 +22,6 @@ services:
 
   query-server:
     image: ${QUERY_SERVER_IMAGE}
-    container_name: query-server
     environment:
       QUERY_ENV: production
       HTTP_DATA_SERVER: data-server
@@ -46,7 +44,6 @@ services:
     
   postgres:
     image: ${POSTGRES_IMAGE}
-    container_name: postgres
     restart: always
     environment:
       POSTGRES_MULTIPLE_DATABASES: development,test,translations,ai_workflows
@@ -62,19 +59,16 @@ services:
 # Cache
   redis-query:
     image: ${REDIS_IMAGE}
-    container_name: redis-query
     networks:
       - agent-server
   
   redis-data:
     image: ${REJSON_IMAGE}
-    container_name: redis-data
     networks:
       - agent-server
 
   data-server:
     image: ${DATA_SERVER_IMAGE}
-    container_name: data-server
     environment:
       ENV: development
 
@@ -108,7 +102,6 @@ services:
 
   experiment-importer:
     image: ${EXPERIMENT_IMPORTER_IMAGE}
-    container_name: experiment-importer
     environment:
       DATABASE_HOST: postgres
       DATABASE_USER: ${DATABASE_USER}
@@ -119,7 +112,6 @@ services:
 
   translator-server:
     image: ${TRANSLATOR_SERVER_IMAGE}
-    container_name: translator-server
     environment:
       # development and test db's share same instance
       SOURCE_POSTGRES_HOST: postgres
