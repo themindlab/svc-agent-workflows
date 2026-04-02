@@ -1,11 +1,9 @@
 services:
   agent-server:
-    image:
-      ${AGENT_SERVER_IMAGE}
+    image: ${IMAGE_NAME:-svc-agent-workflows}:${IMAGE_TAG:-local}
     build:
       context: .
-    command:
-      tail -f /dev/null
+    command: tail -f /dev/null
     environment:
       HTTP_DATA_SERVER: data-server
       HTTP_QUERY_SERVER: query-server
@@ -31,8 +29,8 @@ services:
       REDIS_REPLICA_HOST: redis-query
       LOG_FORMAT: development
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost"]
-      start_period: 10s 
+      test: [ "CMD", "curl", "-f", "http://localhost" ]
+      start_period: 10s
     depends_on:
       data-server:
         condition: service_healthy
@@ -41,7 +39,7 @@ services:
 
     networks:
       - agent-server
-    
+
   postgres:
     image: ${POSTGRES_IMAGE}
     restart: always
@@ -55,13 +53,13 @@ services:
       COMMAND_SERVER_PORT: ${COMMAND_SERVER_PORT}
     networks:
       - agent-server
-  
-# Cache
+
+  # Cache
   redis-query:
     image: ${REDIS_IMAGE}
     networks:
       - agent-server
-  
+
   redis-data:
     image: ${REJSON_IMAGE}
     networks:
@@ -95,8 +93,8 @@ services:
       - redis-data
       - postgres
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/"]
-      start_period: 10s 
+      test: [ "CMD", "curl", "-f", "http://localhost/" ]
+      start_period: 10s
     networks:
       - agent-server
 
@@ -133,8 +131,8 @@ services:
 
       NODE_ENV: production
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost"]
-      start_period: 10s 
+      test: [ "CMD", "curl", "-f", "http://localhost" ]
+      start_period: 10s
     depends_on:
       - postgres
     networks:
