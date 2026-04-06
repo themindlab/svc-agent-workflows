@@ -1,144 +1,200 @@
 services:
-  agent-server:
+  svc-agent-workflows:
     image: ${IMAGE_NAME:-svc-agent-workflows}:${IMAGE_TAG:-local}
     build:
       context: .
     command: tail -f /dev/null
-    environment:
-      HTTP_DATA_SERVER: data-server
-      HTTP_QUERY_SERVER: query-server
-
-      DATABASE_USER: ${DATABASE_USER}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-      DATABASE_PORT: ${DATABASE_PORT}
-      DATABASE_HOST: postgres
-      DATABASE_NAME: ai_workflows
     env_file:
-      - .private.env
+      - .env
     networks:
-      - agent-server
-
-  query-server:
-    image: ${QUERY_SERVER_IMAGE}
+      - standard-network
+    profiles:
+      - ci
+    depends_on:
+      svc-data-gateway:
+        condition: service_healthy
+      svc-data-query:
+        condition: service_healthy
+      svc-auth:
+        condition: service_started
+      svc-postgres:
+        condition: service_healthy
     environment:
-      QUERY_ENV: production
-      HTTP_DATA_SERVER: data-server
-      HTTP_TRANSLATOR_SERVER: translator-server
-      HTTP_EXPERIMENT_IMPORTER: experiment-importer
-      REDIS_MASTER_HOST: redis-query
-      REDIS_REPLICA_HOST: redis-query
-      LOG_FORMAT: development
+      DATABASE_HOST: ${DATABASE_HOST:-svc-postgres}
+      DATABASE_USER: ${DATABASE_USER:-mindlab}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-the_password}
+      DATABASE_NAME: ${DATABASE_NAME:-ai_workflows}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      PGHOST: ${DATABASE_HOST:-svc-postgres}
+      PGPORT: ${DATABASE_PORT:-5432}
+      HTTP_DATA_SERVER: ${HTTP_DATA_SERVER:-svc-data-gateway}
+      HTTP_QUERY_SERVER: ${HTTP_QUERY_SERVER:-svc-data-query}
+      AUTH_SECRET: ${AUTH_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      USE_FAKE_MODEL: ${USE_FAKE_MODEL:-true}
+
+  svc-data-query:
+    image: ${QUERY_SERVER_IMAGE:-europe-west2-docker.pkg.dev/zoo-containers/zoo-dev/svc-data-query:latest}
+    env_file:
+      - .env
+    depends_on:
+      svc-data-gateway:
+        condition: service_healthy
+      svc-translation:
+        condition: service_started
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost" ]
       start_period: 10s
-    depends_on:
-      data-server:
-        condition: service_healthy
-      translator-server:
-        condition: service_started
-
     networks:
-      - agent-server
+      - standard-network
+    profiles:
+      - ci
+    environment:
+      HTTP_DATA_SERVER: svc-data-gateway
+      HTTP_TRANSLATOR_SERVER: svc-translation
+      REDIS_MASTER_HOST: svc-redis
+      REDIS_REPLICA_HOST: svc-redis
 
-  postgres:
-    image: ${POSTGRES_IMAGE}
+  svc-auth:
+    image: ${USER_SERVER_IMAGE:-europe-west2-docker.pkg.dev/zoo-containers/zoo-dev/svc-auth:latest}
+    env_file:
+      - .env
+    depends_on:
+      svc-data-gateway:
+        condition: service_healthy
+    networks:
+      - standard-network
+    profiles:
+      - ci
+    environment:
+      DATABASE_HOST: svc-postgres
+      DATABASE_PORT: "5432"
+      PGHOST: svc-postgres
+      PGPORT: "5432"
+      CONTROL_PORT: "6666"
+      DATABASE_COMMANDER_URL: http://svc-pg-control-plane:6666
+      HTTP_DATA_SERVER: svc-data-gateway
+      REDIS_MASTER_HOST: svc-redis
+      REDIS_REPLICA_HOST: svc-redis
+
+  svc-data-gateway:
+    image: ${DATA_SERVER_IMAGE:-europe-west2-docker.pkg.dev/zoo-containers/zoo-dev/data-gateway:latest}
     restart: always
+    env_file:
+      - .env
+    depends_on:
+      svc-postgres:
+        condition: service_healthy
+      svc-redis:
+        condition: service_healthy
+      svc-pg-control-plane:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost" ]
+      start_period: 10s
+    networks:
+      - standard-network
+    profiles:
+      - ci
+    environment:
+      DATABASE_HOST: svc-postgres
+      DATABASE_PORT: "5432"
+      DATABASE_COMMANDER_URL: http://svc-pg-control-plane:6666
+      REDIS_MASTER_HOST: svc-redis
+      REDIS_REPLICA_HOST: svc-redis
+      PGHOST: svc-postgres
+      PGPORT: "5432"
+
+  svc-translation:
+    image: ${TRANSLATOR_SERVER_IMAGE:-europe-west2-docker.pkg.dev/zoo-containers/zoo-dev/svc-translation:latest}
+    env_file:
+      - .env
+    depends_on:
+      svc-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost" ]
+      start_period: 10s
+    networks:
+      - standard-network
+    profiles:
+      - ci
+    environment:
+      PGHOST: svc-postgres
+      PGPORT: "5432"
+      SOURCE_POSTGRES_HOST: svc-postgres
+      SOURCE_POSTGRES_PORT: "5432"
+      TARGET_POSTGRES_HOST: svc-postgres
+      TARGET_POSTGRES_PORT: "5432"
+
+  svc-import-experiments-rds:
+    image: ${EXPERIMENT_IMPORTER_IMAGE:-europe-west2-docker.pkg.dev/zoo-containers/zoo-dev/svc-import-experiments-rds:latest}
+    env_file:
+      - .env
+    depends_on:
+      svc-data-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost" ]
+      start_period: 10s
+    networks:
+      - standard-network
+    profiles:
+      - ci
+    environment:
+      DATABASE_HOST: svc-postgres
+      REDIS_MASTER_HOST: svc-redis
+      HTTP_DATA_SERVER: svc-data-gateway
+      HTTP_TRANSLATOR_SERVER: svc-translation
+
+  svc-postgres:
+    image: postgres:13.4
     environment:
       POSTGRES_MULTIPLE_DATABASES: development,test,translations,ai_workflows
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
-      POSTGRES_USER: ${DATABASE_USER}
-      #SQL_FILE: five_real_experiments.sql
-      # SQL_FILE: children_need.sql
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-the_password}
+      POSTGRES_USER: ${DATABASE_USER:-mindlab}
       DB_TO_POPULATE: development
-      COMMAND_SERVER_PORT: ${COMMAND_SERVER_PORT}
-    networks:
-      - agent-server
-
-  # Cache
-  redis-query:
-    image: ${REDIS_IMAGE}
-    networks:
-      - agent-server
-
-  redis-data:
-    image: ${REJSON_IMAGE}
-    networks:
-      - agent-server
-
-  data-server:
-    image: ${DATA_SERVER_IMAGE}
-    environment:
-      ENV: development
-
-      DEV_TOOLS: enabled
-      APP_NAME: data-server
-      SERVER_LOG_LEVEL: warn
-      APPLICATION_LOG_LEVEL: debug
-      LOG_FORMAT: development
-      SERVER_MODE: testing
-      # database connection
-      # database_name is overriden in tests
-      DATABASE_HOST: postgres
-      DATABASE_USER: ${DATABASE_USER}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-      DATABASE_NAME: development
-      DATABASE_PORT: 5432
-      DATABASE_COMMANDER_URL: http://postgres:6666
-      THREADS: 1
-
-      # redis connection details
-      REDIS_MASTER_HOST: redis-data
-      REDIS_REPLICA_HOST: redis-data
-    depends_on:
-      - redis-data
-      - postgres
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost/" ]
-      start_period: 10s
+      test: [ "CMD-SHELL", "pg_isready -U ${DATABASE_USER:-mindlab}" ]
+      start_period: 20s
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
-      - agent-server
+      - standard-network
+    profiles:
+      - ci
 
-  experiment-importer:
-    image: ${EXPERIMENT_IMPORTER_IMAGE}
-    environment:
-      DATABASE_HOST: postgres
-      DATABASE_USER: ${DATABASE_USER}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
-      DATABASE_NAME: development
-    networks:
-      - agent-server
-
-  translator-server:
-    image: ${TRANSLATOR_SERVER_IMAGE}
-    environment:
-      # development and test db's share same instance
-      SOURCE_POSTGRES_HOST: postgres
-      SOURCE_POSTGRES_PORT: ${DATABASE_PORT}
-      SOURCE_POSTGRES_USER: ${DATABASE_USER}
-      SOURCE_POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
-      SOURCE_POSTGRES_DATABASE: test
-
-      TARGET_POSTGRES_HOST: postgres
-      TARGET_POSTGRES_PORT: ${DATABASE_PORT}
-      TARGET_POSTGRES_USER: ${DATABASE_USER}
-      TARGET_POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
-      TARGET_POSTGRES_DATABASE: translations
-
-      # uncomment to use the google api in development mode
-      #GOOGLE_APPLICATION_CREDENTIALS: ./src/test/api-key.json
-      GOOGLE_APPLICATION_CREDENTIALS: mock
-      APP_NAME: translator-server
-
-      NODE_ENV: production
+  svc-redis:
+    image: redislabs/rejson:latest
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost" ]
-      start_period: 10s
-    depends_on:
-      - postgres
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
-      - agent-server
+      - standard-network
+    profiles:
+      - ci
+
+  svc-pg-control-plane:
+    image: ${PG_CONTROL_IMAGE:-europe-west2-docker.pkg.dev/zoo-containers/zoo-dev/pg-control-plane:latest}
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      svc-postgres:
+        condition: service_healthy
+    networks:
+      - standard-network
+    profiles:
+      - ci
+    environment:
+      PGHOST: svc-postgres
+      PGPORT: "5432"
+      CONTROL_PORT: "6666"
+      DUMPS_DIR: /dumps
 
 networks:
-  agent-server:
-    name: agent-server
+  standard-network:
     driver: bridge
