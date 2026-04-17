@@ -7,15 +7,15 @@ WORKDIR /app
 ENV UV_PROJECT_ENVIRONMENT="/usr/local/"
 ENV UV_COMPILE_BYTECODE=1
 
-COPY requirements.txt .
+COPY services/svc-agent-workflows/requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
 # Install submodule requirements 
-COPY ./local_modules /app/local_modules
-COPY ./local-requirements.txt /app/local-requirements.txt
+COPY libraries/py /libraries/py
+COPY services/svc-agent-workflows/local-requirements.txt /app/local-requirements.txt
 RUN pip install -r local-requirements.txt
 
-ADD src ./
+ADD services/svc-agent-workflows/src ./
 
 CMD ["python", "run_service.py"]
