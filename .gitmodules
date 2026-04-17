@@ -1,6 +1,0 @@
-[submodule "local_modules/ml-http"]
-	path = local_modules/ml-http
-	url = https://github.com/themindlab/ml-http
-[submodule "local_modules/agentic-ai-testbed"]
-	path = local_modules/agentic-ai-testbed
-	url = https://github.com/themindlab/agentic-ai-testbed
